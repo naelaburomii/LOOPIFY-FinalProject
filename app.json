@@ -1,0 +1,68 @@
+{
+  "expo": {
+    "name": "Loopify B2B",
+    "slug": "loopify-finalproject",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/loopifyLogo.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "scheme": "loopify",
+    "splash": {
+      "image": "./assets/loopifyLogo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.loopify.app",
+      "buildNumber": "1",
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "Loopify needs access to your photo library to upload product images and business logos.",
+        "NSPhotoLibraryAddUsageDescription": "Loopify needs permission to save images to your photo library."
+      },
+      "config": {
+        "usesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/loopifyLogo.png",
+        "backgroundColor": "#ffffff"
+      },
+      "package": "com.loopify.app",
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro",
+      "output": "static",
+      "build": {
+        "babel": {
+          "include": [
+            "@expo/vector-icons"
+          ]
+        }
+      }
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "The app accesses your photos to upload product images."
+        }
+      ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "670ad41c-f0c5-4532-a2b1-19c65cf011af"
+      }
+    }
+  }
+}

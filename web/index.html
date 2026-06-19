@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="ie=edge">
+  <title>Loopify - B2B Business Platform</title>
+
+  <link rel="preconnect" href="https://unpkg.com" crossorigin>
+  <link rel="preload" as="font" type="font/ttf" crossorigin="anonymous" href="https://unpkg.com/@expo/vector-icons@15.0.3/build/vendor/react-native-vector-icons/Fonts/MaterialCommunityIcons.ttf">
+  <link rel="preload" as="font" type="font/ttf" crossorigin="anonymous" href="https://unpkg.com/@expo/vector-icons@15.0.3/build/vendor/react-native-vector-icons/Fonts/MaterialIcons.ttf">
+  <link rel="preload" as="font" type="font/ttf" crossorigin="anonymous" href="https://unpkg.com/@expo/vector-icons@15.0.3/build/vendor/react-native-vector-icons/Fonts/Ionicons.ttf">
+
+  <script>
+    (function() {
+      'use strict';
+      if (typeof document === 'undefined' || typeof window === 'undefined') return;
+
+      var FONTS = {
+        materialCommunity: 'https://unpkg.com/@expo/vector-icons@15.0.3/build/vendor/react-native-vector-icons/Fonts/MaterialCommunityIcons.ttf',
+        material: 'https://unpkg.com/@expo/vector-icons@15.0.3/build/vendor/react-native-vector-icons/Fonts/MaterialIcons.ttf',
+        ionicons: 'https://unpkg.com/@expo/vector-icons@15.0.3/build/vendor/react-native-vector-icons/Fonts/Ionicons.ttf'
+      };
+
+      function shouldRedirectLocalFont(url) {
+        if (typeof url !== 'string') return false;
+        var iconFonts = ['MaterialCommunityIcons', 'MaterialIcons', 'Ionicons'];
+        var blockedPaths = ['/assets/', 'node_modules', '_expo/', '/dist/'];
+        return iconFonts.some(function(font) {
+          return url.includes(font) && blockedPaths.some(function(p) { return url.includes(p); });
+        });
+      }
+
+      function cdnSourceForFamily(family, source) {
+        if (family === 'material-community' || source.includes('MaterialCommunityIcons')) {
+          return 'url("' + FONTS.materialCommunity + '") format("truetype")';
+        }
+        if (family === 'material' || source.includes('MaterialIcons')) {
+          return 'url("' + FONTS.material + '") format("truetype")';
+        }
+        if (family === 'ionicons' || source.includes('Ionicons')) {
+          return 'url("' + FONTS.ionicons + '") format("truetype")';
+        }
+        return null;
+      }
+
+      if (window.FontFace) {
+        var OriginalFontFace = window.FontFace;
+        window.FontFace = function(family, source, descriptors) {
+          if (typeof source === 'string' && shouldRedirectLocalFont(source)) {
+            var redirected = cdnSourceForFamily(family, source);
+            if (redirected) source = redirected;
+          }
+          return new OriginalFontFace(family, source, descriptors);
+        };
+      }
+
+      if (window.FontFace && document.fonts) {
+        [
+          new FontFace('material-community', 'url(' + FONTS.materialCommunity + ') format("truetype")'),
+          new FontFace('material', 'url(' + FONTS.material + ') format("truetype")'),
+          new FontFace('ionicons', 'url(' + FONTS.ionicons + ') format("truetype")')
+        ].forEach(function(fontFace) {
+          try {
+            document.fonts.add(fontFace);
+            fontFace.load().catch(function(err) {
+              console.warn('Icon font preload warning:', fontFace.family, err);
+            });
+          } catch (e) {
+            console.warn('Icon font creation warning:', fontFace.family, e);
+          }
+        });
+      }
+    })();
+  </script>
+
+  <style id="icon-fonts">
+    @font-face {
+      font-family: 'material-community';
+      src: url('https://unpkg.com/@expo/vector-icons@15.0.3/build/vendor/react-native-vector-icons/Fonts/MaterialCommunityIcons.ttf') format('truetype');
+      font-weight: normal;
+      font-style: normal;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: 'material';
+      src: url('https://unpkg.com/@expo/vector-icons@15.0.3/build/vendor/react-native-vector-icons/Fonts/MaterialIcons.ttf') format('truetype');
+      font-weight: normal;
+      font-style: normal;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: 'ionicons';
+      src: url('https://unpkg.com/@expo/vector-icons@15.0.3/build/vendor/react-native-vector-icons/Fonts/Ionicons.ttf') format('truetype');
+      font-weight: normal;
+      font-style: normal;
+      font-display: swap;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+</body>
+</html>

@@ -1,0 +1,30 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isDeveloper() {
+      return request.auth != null &&
+        request.auth.token.email in ['nael@loopify.dev', 'naelamem@gmail.com', 'naelaburomii@gmail.com'];
+    }
+
+    // Business logos and cover images
+    match /businesses/{userId}/{allPaths=**} {
+      // Allow read for all authenticated users
+      allow read: if request.auth != null;
+      // Allow write only for the owner
+      allow write: if request.auth != null && (isDeveloper() || request.auth.uid == userId);
+    }
+    
+    // Product images
+    match /products/{userId}/{allPaths=**} {
+      // Allow read for all authenticated users
+      allow read: if request.auth != null;
+      // Allow write only for the owner
+      allow write: if request.auth != null && (isDeveloper() || request.auth.uid == userId);
+    }
+    
+    // Default: deny all other access
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

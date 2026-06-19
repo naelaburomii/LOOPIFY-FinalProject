@@ -1,0 +1,353 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isDeveloper() {
+      return isAuthenticated() &&
+        request.auth.token.email != null &&
+        request.auth.token.email.lower() in [
+          'nael@loopify.dev',
+          'naelamem@gmail.com',
+          'naelaburomii@gmail.com'
+        ];
+    }
+
+    function userBusinessDoc() {
+      return get(/databases/$(database)/documents/businesses/$(request.auth.uid));
+    }
+
+    function hasUserBusinessDoc() {
+      return exists(/databases/$(database)/documents/businesses/$(request.auth.uid));
+    }
+
+    function getUserRole() {
+      return hasUserBusinessDoc() ? userBusinessDoc().data.role : null;
+    }
+
+    function getUserStoreId() {
+      return hasUserBusinessDoc()
+        ? (
+            userBusinessDoc().data.storeId != null
+              ? userBusinessDoc().data.storeId
+              : (
+                  userBusinessDoc().data.ownerBusinessId != null
+                    ? userBusinessDoc().data.ownerBusinessId
+                    : request.auth.uid
+                )
+          )
+        : request.auth.uid;
+    }
+
+    function isManager() {
+      return isAuthenticated() && (
+        isDeveloper() ||
+        (
+          hasUserBusinessDoc() && (
+            userBusinessDoc().data.role == 'manager' ||
+            (
+              userBusinessDoc().data.role == null &&
+              userBusinessDoc().data.isTeamMember != true &&
+              (
+                userBusinessDoc().data.ownerBusinessId == null ||
+                userBusinessDoc().data.ownerBusinessId == request.auth.uid
+              )
+            )
+          )
+        )
+      );
+    }
+
+    function canReadWorkforceDoc() {
+      return isAuthenticated() && (
+        isDeveloper() ||
+        resource.data.employeeId == request.auth.uid ||
+        (
+          isManager() &&
+          resource.data.storeId != null &&
+          resource.data.storeId == getUserStoreId()
+        )
+      );
+    }
+
+    function isSupplier() {
+      return isAuthenticated() && getUserRole() == 'supplier';
+    }
+
+    function canManageCatalog() {
+      return isDeveloper() || isManager() || isSupplier();
+    }
+
+    function ownsCatalogResource(businessId) {
+      return businessId in [request.auth.uid, getUserStoreId()] ||
+        (
+          hasUserBusinessDoc() &&
+          (
+            (userBusinessDoc().data.ownerBusinessId != null &&
+              businessId == userBusinessDoc().data.ownerBusinessId) ||
+            (userBusinessDoc().data.storeId != null &&
+              businessId == userBusinessDoc().data.storeId)
+          )
+        );
+    }
+
+    function canDeleteCatalogItem() {
+      return isAuthenticated() && canManageCatalog();
+    }
+    
+    // Businesses collection
+    match /businesses/{businessId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && (
+        isDeveloper() ||
+        request.auth.uid == businessId ||
+        (isManager() &&
+          request.resource.data.isTeamMember == true &&
+          request.resource.data.ownerBusinessId == request.auth.uid &&
+          request.resource.data.storeId == request.auth.uid &&
+          request.resource.data.role in ['employee', 'supplier'])
+      );
+      allow update: if isAuthenticated() && (
+        isDeveloper() ||
+        request.auth.uid == businessId ||
+        (isManager() && resource.data.ownerBusinessId == request.auth.uid)
+      );
+      allow delete: if isAuthenticated() && (isDeveloper() || request.auth.uid == businessId);
+    }
+    
+    // Products collection
+    match /products/{productId} {
+      // Allow any authenticated user to read products (for browsing businesses)
+      // This enables B2B marketplace functionality where users can view
+      // products from other businesses
+      allow read: if isAuthenticated();
+      
+      // Allow create if authenticated and user is setting their own businessId
+      allow create: if isAuthenticated() && canManageCatalog() && (
+        isDeveloper() || ownsCatalogResource(request.resource.data.businessId)
+      );
+      
+      // Allow update if authenticated and user owns the product
+      // Also ensure businessId doesn't change (security measure)
+      allow update: if isAuthenticated() && canManageCatalog() && (
+        isDeveloper() ||
+        (
+          ownsCatalogResource(resource.data.businessId) &&
+          request.resource.data.businessId == resource.data.businessId
+        )
+      );
+      
+      // Inventory managers can delete products shown in their catalog UI
+      allow delete: if canDeleteCatalogItem();
+    }
+    
+    // Product categories collection
+    match /productCategories/{categoryId} {
+      // Allow read if authenticated and user owns the category
+      // This works for both individual document reads and queries
+      // For queries with where('businessId', '==', uid), this rule will allow
+      // access to documents where businessId matches the user's uid
+      allow read: if isAuthenticated() && (
+        isDeveloper() || ownsCatalogResource(resource.data.businessId)
+      );
+      
+      // Allow create if authenticated and user is setting their own businessId
+      allow create: if isAuthenticated() && canManageCatalog() && (
+        isDeveloper() || ownsCatalogResource(request.resource.data.businessId)
+      );
+      
+      // Allow update if authenticated and user owns the category
+      // Also ensure businessId doesn't change (security measure)
+      allow update: if isAuthenticated() && canManageCatalog() && (
+        isDeveloper() ||
+        (
+          ownsCatalogResource(resource.data.businessId) &&
+          request.resource.data.businessId == resource.data.businessId
+        )
+      );
+      
+      // Inventory managers can delete categories for their store
+      allow delete: if canDeleteCatalogItem();
+    }
+    
+    // Legacy categories collection (for backward compatibility)
+    match /categories/{categoryId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && (isDeveloper() ||
+        request.resource.data.businessId == request.auth.uid);
+      allow update, delete: if isAuthenticated() && (isDeveloper() ||
+        resource.data.businessId == request.auth.uid || canManageCatalog());
+    }
+    
+    // Orders collection
+    match /orders/{orderId} {
+      allow read: if isAuthenticated() && (isDeveloper() ||
+        (resource.data.buyerId in [request.auth.uid, getUserStoreId()] ||
+         resource.data.supplierId in [request.auth.uid, getUserStoreId()] ||
+         isManager()));
+
+      allow create: if isAuthenticated() && (isDeveloper() || (
+        request.resource.data.buyerId in [request.auth.uid, getUserStoreId()] &&
+        request.resource.data.supplierId is string &&
+        request.resource.data.status == 'pending'));
+
+      allow update: if isAuthenticated() && (isDeveloper() || (
+        // Buyer can cancel their own pending order only.
+        (resource.data.buyerId in [request.auth.uid, getUserStoreId()] &&
+          request.resource.data.buyerId == resource.data.buyerId &&
+          request.resource.data.supplierId == resource.data.supplierId &&
+          request.resource.data.status in ['pending', 'cancelled']) ||
+        // Supplier (or manager) can process supplier-side status transitions.
+        ((resource.data.supplierId in [request.auth.uid, getUserStoreId()] || isSupplier() || isManager()) &&
+          request.resource.data.buyerId == resource.data.buyerId &&
+          request.resource.data.supplierId == resource.data.supplierId &&
+          request.resource.data.status in ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled'])
+      ));
+
+      allow delete: if isDeveloper() || isManager();
+    }
+
+    match /shifts/{shiftId} {
+      allow read: if canReadWorkforceDoc();
+      allow create: if isDeveloper() || (
+        isManager() &&
+        request.resource.data.storeId == getUserStoreId()
+      );
+      allow update, delete: if isDeveloper() || (
+        isManager() &&
+        resource.data.storeId == getUserStoreId()
+      );
+    }
+
+    match /attendance/{attendanceId} {
+      allow read: if canReadWorkforceDoc();
+      allow create: if isAuthenticated() && (isDeveloper() || (
+        request.resource.data.employeeId == request.auth.uid &&
+        request.resource.data.storeId == getUserStoreId()
+      ));
+      allow update: if isAuthenticated() && (isDeveloper() || (
+        resource.data.employeeId == request.auth.uid ||
+        (
+          isManager() &&
+          resource.data.storeId == getUserStoreId()
+        )
+      ));
+      allow delete: if isDeveloper() || (
+        isManager() &&
+        resource.data.storeId == getUserStoreId()
+      );
+    }
+
+    match /requests/{requestId} {
+      allow read: if canReadWorkforceDoc();
+      allow create: if isAuthenticated() && (isDeveloper() || (
+        request.resource.data.employeeId == request.auth.uid &&
+        request.resource.data.storeId == getUserStoreId()
+      ));
+      allow update, delete: if isAuthenticated() && (isDeveloper() || (
+        resource.data.employeeId == request.auth.uid ||
+        (
+          isManager() &&
+          resource.data.storeId == getUserStoreId()
+        )
+      ));
+    }
+
+    match /alerts/{alertId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isDeveloper() || isManager() || isSupplier();
+    }
+    
+    // ── B2B Chat ─────────────────────────────────────────────────────────────
+    // participantIds = two business document IDs (sorted). Messages carry senderBusinessId.
+
+    function getDevActingBusinessId() {
+      return hasUserBusinessDoc() &&
+        userBusinessDoc().data.devActingBusinessId is string &&
+        userBusinessDoc().data.devActingBusinessId.size() > 0
+        ? userBusinessDoc().data.devActingBusinessId
+        : '';
+    }
+
+    function actsForBusiness(businessId) {
+      return isAuthenticated() && (
+        isDeveloper() ||
+        businessId == request.auth.uid ||
+        businessId == getUserStoreId() ||
+        (getDevActingBusinessId() != '' && businessId == getDevActingBusinessId()) ||
+        ownsCatalogResource(businessId)
+      );
+    }
+
+    function isInMyParticipantIds(participantIds) {
+      return participantIds != null && (
+        request.auth.uid in participantIds ||
+        getUserStoreId() in participantIds ||
+        (getDevActingBusinessId() != '' && getDevActingBusinessId() in participantIds)
+      );
+    }
+
+    function isChatParticipant(participantIds) {
+      return participantIds != null &&
+        participantIds.size() == 2 &&
+        (
+          actsForBusiness(participantIds[0]) ||
+          actsForBusiness(participantIds[1])
+        );
+    }
+
+    match /conversations/{conversationId} {
+      // List/read: match the array-contains query (includes legacy threads with bad shape).
+      allow read: if isDeveloper() || isInMyParticipantIds(resource.data.participantIds);
+
+      allow create: if
+        request.resource.data.participantIds != null &&
+        request.resource.data.participantIds.size() == 2 &&
+        request.resource.data.participantKey is string &&
+        isChatParticipant(request.resource.data.participantIds);
+
+      allow update: if
+        resource.data.participantIds != null &&
+        request.resource.data.participantIds == resource.data.participantIds &&
+        isChatParticipant(resource.data.participantIds);
+
+      allow delete: if isChatParticipant(resource.data.participantIds);
+
+      match /messages/{messageId} {
+        function parentConversation() {
+          return get(/databases/$(database)/documents/conversations/$(conversationId));
+        }
+
+        function parentParticipants() {
+          return parentConversation().data.participantIds;
+        }
+
+        function canAccessMessages() {
+          return isChatParticipant(parentParticipants());
+        }
+
+        allow read: if canAccessMessages();
+
+        allow create: if
+          isAuthenticated() &&
+          request.resource.data.senderId == request.auth.uid &&
+          request.resource.data.senderBusinessId is string &&
+          request.resource.data.senderBusinessId in parentParticipants() &&
+          actsForBusiness(request.resource.data.senderBusinessId) &&
+          request.resource.data.text is string &&
+          request.resource.data.text.size() > 0 &&
+          request.resource.data.text.size() <= 500 &&
+          canAccessMessages();
+
+        allow update: if
+          canAccessMessages() &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+
+        allow delete: if isDeveloper();
+      }
+    }
+  }
+}
